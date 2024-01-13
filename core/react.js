@@ -1,4 +1,4 @@
-function createElementNode(type, props, ...children) {
+function createElement(type, props, ...children) {
   return {
     type,
     props: {
@@ -35,6 +35,6 @@ function render(node, container) {
 }
 
 export default {
-  createElementNode,
+  createElement,
   render
 }
