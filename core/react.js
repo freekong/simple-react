@@ -20,31 +20,15 @@ function createTextNode(text) {
   }
 }
 
+function isFunction(value) {
+  return typeof value === 'function'
+}
+
 let nextWorkofUnit = null
 let currentRoot = null
 let wipRoot = null
 let deletion = []
 let wipFiber = null
-
-function workLoop(deadline) {
-  
-  let shouldYield = false
-  while(!shouldYield && nextWorkofUnit) {
-    
-    nextWorkofUnit = performWorkOfUnit(nextWorkofUnit)
-    if (wipRoot?.sibling?.type === nextWorkofUnit?.type) {
-      nextWorkofUnit = undefined
-    }
-    shouldYield = deadline.timeRemaining() < 1
-    
-  }
-
-  if (!nextWorkofUnit && wipRoot) {
-    commitRoot()
-  }
-
-  requestIdleCallback(workLoop)
-}
 
 function commitRoot() {
   deletion.forEach(commitDeletion)
@@ -67,9 +51,6 @@ function commitDeletion(fiber) {
     // console.log('%c [ fiber ]-57', 'font-size:13px; background:#f74579; color:#ff89bd;', fiber)
     commitDeletion(fiber.child)
   }
-
-
-
 
 }
 
@@ -181,6 +162,8 @@ function reconcileChildren(fiber, children) {
 
 function updateFunctionComponent(fiber) {
   wipFiber = fiber
+  stateHooks = []
+  stateHookIndex = 0
   let children = [fiber.type(fiber.props)]
   reconcileChildren(fiber, children)
 }
@@ -200,7 +183,7 @@ function updateHostComponent(fiber) {
 
 function performWorkOfUnit(fiber) {
   // 创建dom
-  const isFunctionComponent = typeof fiber.type === 'function'
+  const isFunctionComponent = isFunction(fiber.type)
   if (!isFunctionComponent) {
     updateHostComponent(fiber)
   } else {
@@ -244,10 +227,66 @@ function update() {
   }
 }
 
+let stateHooks;
+let stateHookIndex;
+
+function useState(initial) {
+  let currentWipFiber = wipFiber
+  let oldHook = currentWipFiber?.alternate?.stateHooks[stateHookIndex]
+  const stateHook = {
+    state: oldHook ? oldHook.state : initial,
+    queue: oldHook ? oldHook.queue : []
+  }
+
+  stateHook.queue.forEach(action => {
+    stateHook.state = action
+  })
+  stateHook.queue = []
+  stateHooks.push(stateHook)
+  stateHookIndex++
+  currentWipFiber.stateHooks = stateHooks
+
+  function setState(action) {
+    let eagerState = isFunction(action) ? action(stateHook.state) : action
+    if (eagerState === stateHook.state) return
+    stateHook.queue.push(eagerState)
+
+    wipRoot = {
+      ...currentWipFiber,
+      alternate: currentWipFiber
+    }
+    
+    nextWorkofUnit = wipRoot
+  }
+
+  return [stateHook.state, setState]
+}
+
+function workLoop(deadline) {
+  
+  let shouldYield = false
+  while(!shouldYield && nextWorkofUnit) {
+    
+    nextWorkofUnit = performWorkOfUnit(nextWorkofUnit)
+    if (wipRoot?.sibling?.type === nextWorkofUnit?.type) {
+      nextWorkofUnit = undefined
+    }
+    shouldYield = deadline.timeRemaining() < 1
+    
+  }
+
+  if (!nextWorkofUnit && wipRoot) {
+    commitRoot()
+  }
+
+  requestIdleCallback(workLoop)
+}
+
 requestIdleCallback(workLoop)
 
 export default {
   createElement,
+  useState,
   update,
   render
 }
