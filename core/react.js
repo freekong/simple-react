@@ -33,6 +33,7 @@ let wipFiber = null
 function commitRoot() {
   deletion.forEach(commitDeletion)
   commitFiber(wipRoot.child)
+  commitEffectHooks()
   // console.log('%c [ root ]-42', 'font-size:13px; background:#fb1a45; color:#ff5e89;', root)
   currentRoot = wipRoot
   wipRoot = null
@@ -70,6 +71,51 @@ function commitFiber(fiber) {
   }
   commitFiber(fiber.child)
   commitFiber(fiber.sibling) 
+}
+
+function commitEffectHooks() {
+  console.log('[ wipRoot ] >', wipRoot)
+  function run(fiber) {
+    if (!fiber) return
+    if (!fiber.alternate) {
+      // init
+      fiber.effectHooks?.forEach(hook => {
+        hook.cleanup = hook.callback()
+      })
+    } else {
+      // update
+
+      const oldEffectHooks = fiber.alternate.effectHooks
+      fiber.effectHooks?.forEach((newHook, index) => {
+
+        const shouldUpdate = oldEffectHooks[index]?.deps.some((oldDeps, i) => {
+          return oldDeps !== newHook.deps[i]
+        })
+  
+        shouldUpdate && (newHook.cleanup = newHook?.callback())
+
+      })
+    }
+    run(fiber.child)
+    run(fiber.sibling)
+  }
+
+  function runCleanup(fiber) {
+    if (!fiber) return
+
+    fiber?.alternate?.effectHooks?.forEach(hook => {
+      if (hook.deps.length) {
+        hook.cleanup && hook.cleanup()
+      }
+    })
+
+    runCleanup(fiber.child)
+    runCleanup(fiber.sibling)
+  }
+
+  runCleanup(wipRoot)
+  run(wipRoot)
+
 }
 
 function createDom(type) {
@@ -164,6 +210,7 @@ function updateFunctionComponent(fiber) {
   wipFiber = fiber
   stateHooks = []
   stateHookIndex = 0
+  effectHooks = []
   let children = [fiber.type(fiber.props)]
   reconcileChildren(fiber, children)
 }
@@ -262,6 +309,21 @@ function useState(initial) {
   return [stateHook.state, setState]
 }
 
+let effectHooks;
+function useEffect(callback, deps) {
+
+  const effectHook = {
+    callback,
+    deps,
+    cleanup: undefined
+  }
+
+  effectHooks.push(effectHook)
+
+  wipFiber.effectHooks = effectHooks
+}
+
+
 function workLoop(deadline) {
   
   let shouldYield = false
@@ -287,6 +349,7 @@ requestIdleCallback(workLoop)
 export default {
   createElement,
   useState,
+  useEffect,
   update,
   render
 }
